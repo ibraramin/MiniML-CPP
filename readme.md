@@ -66,7 +66,7 @@ ml_demo.exe
 
 ---
 
-## 📊 Results
+## Results
 
 The demo (`main.cpp`) runs through 6 standard machine learning scenarios.
 
@@ -108,7 +108,7 @@ Classifying a "Donut" dataset (concentric circles) using a Multi-Layer Perceptro
 
 ---
 
-## 💻 Code Example
+## Code Example
 
 Here is how to define a simple neural network using the library:
 
@@ -152,7 +152,7 @@ int main() {
 
 ---
 
-## 📂 Project Structure
+## Project Structure
 
 * **`tensor.hpp/cpp`**: The core Tensor engine. Handles data storage, shapes, strides, and the DAG (Directed Acyclic Graph) for backpropagation.
 * **`nn.hpp`**: Neural network modules (`Module` base class, `Linear`, `ReLU`, `SGD`, `MSELoss`).
@@ -163,11 +163,11 @@ int main() {
 
 ---
 
-## 🤝 Contributing
+## Contributing
 
 Contributions are welcome! If you want to add new activation functions (Tanh), optimizers (Adam), or support for reading CSV files, feel free to open a Pull Request.
 
-## 📄 License
+## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
