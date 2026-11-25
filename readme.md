@@ -1,173 +1,159 @@
-# MiniML-CPP: A Lightweight C++ Machine Learning Library
+# MiniML-CPP
 
-![Language](https://img.shields.io/badge/language-C++17-blue.svg)
-![License](https://img.shields.io/badge/license-MIT-green.svg)
-![Dependencies](https://img.shields.io/badge/dependencies-STL%20%7C%20Gnuplot-orange.svg)
+[![CI](https://github.com/ibraramin/MiniML-CPP/actions/workflows/ci.yml/badge.svg)](https://github.com/ibraramin/MiniML-CPP/actions/workflows/ci.yml)
 
-**MiniML-CPP** is a machine learning library written in C++ from scratch (because god intended it that way). The only dependency is `gnuplot` because I can't be bothered to make a custom plotter.
+> The badge tracks the default branch. The verifiability changes in this session are
+> local and unpushed, so it will show the previous state until they are pushed.
 
-This project demonstrates how core ML concepts—tensors, backpropagation, optimizers, and layers—work under the hood without relying on heavy external frameworks.
+A small machine-learning library written from scratch in C++17. The core is the
+C++ standard library only; `gnuplot` is used solely by the optional plotting
+header and is **not** needed to build, test, or run the demos in this README.
 
----
+**Why?** To make the internals visible. Instead of calling a framework's
+`backward()`, you can read `src/tensor.cpp` and see a tape being built and
+consumed. The library is deliberately tiny so the whole autodiff engine fits in
+one file.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    T[Tensor<br/>data + shape + strides] --> G[Graph Node<br/>_prev + _backward lambda]
+    G --> B[reverse-mode backward<br/>topological sort + chain rule]
+    B --> O[Optimizer<br/>SGD / Adam]
+    O -->|updates data in place| T
+```
+
+Every operation returns a new `Tensor` that records its parents in `_prev` and
+its local derivative in `_backward`. Calling `backward()` on a scalar loss
+walks that graph in reverse topological order and accumulates gradients into
+each leaf's `grad` buffer. An optimizer then updates the leaf `data` buffers.
 
 ## Features
 
-* **Autograd Engine**: Reverse-mode automatic differentiation for scalar and tensor operations.
-* **Tensor Operations**: Matrix multiplication, broadcasting, transposition, and element-wise math.
-* **Modular API**: `Linear`, `ReLU`, `Sigmoid`, and `Sequential` layers similar to PyTorch/Keras.
-* **Optimizers**: Stochastic Gradient Descent (SGD) with easy extensibility.
-* **Visualization**: Real-time plotting pipeline using `gnuplot` (no heavy GUI libraries required).
-* **Zero Bloat**: Uses only the C++ Standard Library (and Gnuplot for rendering).
+- **Tensor engine** — shape/stride bookkeeping, element-wise `+ - *`, `matmul`,
+  `transpose`, `pow`, `sum`, `relu`, `sigmoid`, `log`.
+- **Reverse-mode autodiff** — a dynamically built tape with per-operation
+  backward closures, implemented in `src/tensor.cpp`.
+- **Neural modules** — `Linear`, `Sigmoid`, `ReLU`, `Sequential`, `Module`,
+  following a familiar `forward`/`parameters`/`operator()` shape.
+- **Estimators** — linear, ridge, polynomial, logistic, linear SVM and an MLP
+  classifier in `src/models.hpp`; accuracy helper in `src/metrics.hpp`.
+- **Optimizers** — batch SGD in `src/nn.hpp` and bias-corrected Adam in
+  `include/adam.hpp`.
+- **Verifiability** — deterministic central-difference gradient checks
+  (`include/gradcheck.hpp`, `tests/test_gradcheck.cpp`), a versioned
+  endian-safe binary weight format (`include/serialization.hpp`,
+  `tests/test_serialization.cpp`), and a reproducible XOR training demo
+  (`examples/xor_demo.cpp`) that exercises both optimizers.
+- **Optional plotting** — `src/plot.hpp` pipes commands to `gnuplot`.
 
----
+## Build, test, and run
 
-## Getting Started
-
-### Prerequisites
-
-1.  **C++ Compiler**: `g++` supporting **C++17** or higher.
-    * *Note: The code is forward-compatible with C++20/23 as I compiled it with C++17 to C++23.*
-2.  **Gnuplot**: Required for the visualization modules.
-    * *Linux (Arch btw)*: `sudo pacman -S gnuplot`
-    * *macOS*: `brew install gnuplot`
-    * *Windows (please don't use that spyware anymore)*: Install [Gnuplot](http://www.gnuplot.info/) and ensure `gnuplot.exe` is in your System PATH.
-
-### Installation
-
-Clone the repository:
+The following is the complete Definition of Done. Run it from the repository
+root; all commands are copy-pasteable and must exit 0.
 
 ```bash
-git clone [https://github.com/ibraramin/MiniML-CPP.git](https://github.com/ibraramin/MiniML-CPP.git)
-cd MiniML-CPP
-
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j
+ctest --test-dir build --output-on-failure
+./build/examples/xor_demo
+cmake -S . -B build-asan -DCMAKE_BUILD_TYPE=Debug -DENABLE_ASAN=ON
+cmake --build build-asan -j
+ctest --test-dir build-asan --output-on-failure
 ```
 
-### Building and Running
+`ENABLE_ASAN=OFF` is the default. Turning it on adds
+`-fsanitize=address,undefined -fno-omit-frame-pointer` to both compilation and
+linking.
 
-Compile the `main.cpp` file using your preferred compiler (I used gcc, don't know if it'll compile in clang or msvc).
+For the original six-demo showcase (which **does** require `gnuplot`), see
+`src/readme.md`.
 
-**Using g++:**
+## Deterministic XOR demo
 
-```bash
-g++ -std=c++17 main.cpp tensor.cpp -o ml_demo
+The 2-2-1 network `Sequential{Linear(2,2), Sigmoid, Linear(2,1), Sigmoid}` is
+trained on all four XOR rows with fixed initial weights, once with SGD and once
+with Adam. The program prints `epoch,loss` CSV for each mode and exits 0 only
+when both final losses clear their measured thresholds.
 
-```
+![XOR demo training](docs/assets/xor-demo.gif)
 
-**Running the executable:**
+Typical results from this deterministic configuration (3000 epochs):
 
-```bash
-# Linux/macOS
-./ml_demo
+| Mode | Initial loss | Final loss | Threshold |
+|------|-------------:|-----------:|----------:|
+| SGD  | 1.038177     | 0.002114   | 0.01      |
+| Adam | 1.038177     | 0.000128   | 0.01      |
 
-# Windows
-ml_demo.exe
-
-```
-
----
-
-## Results
-
-The demo (`main.cpp`) runs through 6 standard machine learning scenarios.
-
-### 1. Linear Regression
-
-Fitting a straight line to noisy linear data using gradient descent.
-
-![Linear Regression Results](images/linear-regression.png)
-
-### 2. Ridge Regression (L2 Regularization)
-
-Demonstrates the training loss curve converging over epochs using L2 penalty.
-
-![Ridge Regression Results](images/ridge-regression.png)
-
-### 3. Polynomial Regression
-
-Fitting a non-linear quadratic curve using a custom feature expansion.
-
-![Polynomial Regression Results](images/poly-regression.png)
-
-### 4. Logistic Regression
-
-Binary classification on linearly separable "blob" data.
-
-![Logistic Regression Results](images/logistic-regression.png)
-
-### 5. Linear SVM
-
-Max-margin classification using Hinge Loss on binary data.
-
-![Linear SVM Results](images/svm.png)
-
-### 6. MLP (Neural Network) on Non-Linear Data
-
-Classifying a "Donut" dataset (concentric circles) using a Multi-Layer Perceptron (2 inputs -> 16 hidden -> 1 output) with ReLU activation.
-
-![MLP Results](images/mlp.png)
-
----
-
-## Code Example
-
-Here is how to define a simple neural network using the library:
+## Usage
 
 ```cpp
 #include "tensor.hpp"
 #include "nn.hpp"
-#include "models.hpp"
+#include "adam.hpp"
 
 int main() {
-    // 1. Define Data
-    Tensor X = Tensor::randn({10, 2}); // 10 samples, 2 features
-    Tensor y = Tensor::randn({10, 1}); // Targets
+    Tensor X({4, 2}), y({4, 1});
+    // fill X.data->at(i) / y.data->at(i) by hand for reproducibility;
+    // Tensor::randn() is intentionally non-deterministic.
 
-    // 2. Define Model (2 inputs -> 4 hidden -> 1 output)
-    auto model = std::make_shared<Sequential>(std::initializer_list<std::shared_ptr<Module>>{
-        std::make_shared<Linear>(2, 4),
-        std::make_shared<ReLU>(),
-        std::make_shared<Linear>(4, 1),
-        std::make_shared<Sigmoid>()
-    });
+    auto layer = std::make_shared<Linear>(2, 1);
+    Sequential model({layer, std::make_shared<Sigmoid>()});
 
-    // 3. Optimizer & Loss
-    SGD optim(model->parameters(), 0.01f);
-    MSELoss criterion;
-
-    // 4. Training Loop
-    for (int i = 0; i < 100; ++i) {
-        optim.zero_grad();          // Reset gradients
-        Tensor pred = model->forward(X);
-        Tensor loss = criterion(pred, y);
-        
-        loss.backward();            // Autograd magic
-        optim.step();               // Update weights
-        
-        std::cout << "Epoch " << i << " Loss: " << loss.data->at(0) << "\n";
+    Adam optim(model.parameters(), 0.05f);
+    MSELoss mse;
+    for (int i = 0; i < 1000; ++i) {
+        optim.zero_grad();
+        Tensor loss = mse(model.forward(X), y);
+        loss.backward();
+        optim.step();
     }
-    return 0;
 }
-
 ```
 
----
+## Project structure
 
-## Project Structure
+- `src/tensor.hpp`, `src/tensor.cpp` — tensor storage, shapes, autodiff engine.
+- `src/nn.hpp` — modules, SGD, MSELoss.
+- `src/models.hpp`, `src/metrics.hpp` — estimators and accuracy.
+- `src/plot.hpp`, `src/main.cpp`, `src/readme.md` — the original gnuplot showcase.
+- `include/gradcheck.hpp`, `include/adam.hpp`, `include/serialization.hpp` —
+  added verification and optimizer headers.
+- `tests/`, `examples/` — deterministic gradcheck, serialization, XOR demo.
+- `CMakeLists.txt`, `.github/workflows/ci.yml` — build and CI.
 
-* **`tensor.hpp/cpp`**: The core Tensor engine. Handles data storage, shapes, strides, and the DAG (Directed Acyclic Graph) for backpropagation.
-* **`nn.hpp`**: Neural network modules (`Module` base class, `Linear`, `ReLU`, `SGD`, `MSELoss`).
-* **`models.hpp`**: High-level estimator classes wrapping the NN modules (e.g., `LogisticRegression`, `MLPClassifier`).
-* **`metrics.hpp`**: Utility for calculating accuracy.
-* **`plot.hpp`**: Interface to `gnuplot` for piping commands and data for real-time visualization.
-* **`main.cpp`**: The main showcase file containing data generation and demo logic.
+## Limitations
 
----
+This is an educational codebase, not a production framework. Be aware of:
 
-## Contributing
-
-Contributions are welcome! If you want to add new activation functions (Tanh), optimizers (Adam), or support for reading CSV files, feel free to open a Pull Request.
+- **Autodiff is pointer-identity based.** `backward()` deduplicates nodes by
+  their raw data pointer, and `_prev` stores *copies* of tensors. Reusing a
+  tensor node in several places in one graph, or holding graphs across many
+  backward calls, can produce wrong gradients. Build a fresh graph per step.
+- **`backward()` only clears the root gradient.** Call `zero_grad()` on your
+  parameters (or use an optimizer's `zero_grad()`) before every backward pass;
+  otherwise leaf gradients accumulate.
+- **No scalar constructor and no scalar `operator*`.** Create a `Tensor` with a
+  shape and write floats into `data->at(i)`. There is no `Tensor * float`.
+- **Loss is a sum, not a mean.** `MSELoss` returns the sum of squared errors, so
+  learning rates are batch-size dependent.
+- **Limited broadcasting.** Only one specific row-broadcast case in `operator+`
+  is supported; other shape combinations throw.
+- **Full-batch only.** No mini-batching, shuffling, schedulers, weight decay,
+  gradients clipping, checkpoint/resume metadata, or GPU/CPU device model.
+- **`Tensor::randn()` uses `random_device`** and is therefore not reproducible;
+  every deterministic test seeds its tensors by hand instead.
+- **Serialization stores raw float weights only** — no optimizer state, no
+  topology, no names. Version 1 files encode integers and floats little-endian
+  regardless of host byte order; a mismatched version, count or shape fails
+  cleanly.
+- **`src/plot.hpp` calls `popen` to drive `gnuplot`.** It is excluded from all
+  tests and from the XOR demo.
+- **No thread-safety guarantees.** Several helpers use `static thread_local`
+  RNG state but the tensor graph itself has no locking.
+- **No install/export target** is provided by `CMakeLists.txt`.
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
+MIT — see [LICENSE](LICENSE).
