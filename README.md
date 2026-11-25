@@ -1,9 +1,10 @@
 # MiniML-CPP
 
-[![CI](https://github.com/ibraramin/MiniML-CPP/actions/workflows/ci.yml/badge.svg)](https://github.com/ibraramin/MiniML-CPP/actions/workflows/ci.yml)
+[![CI](https://github.com/ibraramin/MiniML-CPP/actions/workflows/ci.yml/badge.svg)](https://github.com/ibraramin/MiniML-CPP/actions/workflows/ci.yml) [![Release](https://img.shields.io/github/v/release/ibraramin/MiniML-CPP)](https://github.com/ibraramin/MiniML-CPP/releases) [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-> The badge tracks the default branch. The verifiability changes in this session are
-> local and unpushed, so it will show the previous state until they are pushed.
+> From-scratch C++17 machine learning you can read end to end — and verify, not just trust.
+
+> **Branch status.** The verifiability work lives on `feat/verifiability`, which is being pushed with a pull request open against `main`. The CI badge above tracks `main`, so it will reflect this work only after the PR is merged; until then it shows the default branch's state. The release badge will read `v0.1.0` once the release being published with this change goes live.
 
 A small machine-learning library written from scratch in C++17. The core is the
 C++ standard library only; `gnuplot` is used solely by the optional plotting
@@ -13,6 +14,32 @@ header and is **not** needed to build, test, or run the demos in this README.
 `backward()`, you can read `src/tensor.cpp` and see a tape being built and
 consumed. The library is deliberately tiny so the whole autodiff engine fits in
 one file.
+
+## Proof in two minutes
+
+A real recording of the deterministic XOR training run featured below (900×520,
+roughly 18 seconds). It trains a 2-2-1 network with both SGD and Adam and prints
+`epoch,loss` CSV as it goes.
+
+![XOR demo training — deterministic SGD and Adam on the XOR dataset](docs/assets/xor-demo.gif)
+
+Run the complete Definition of Done from the repository root. Every command is
+copy-pasteable and must exit 0:
+
+```bash
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build -j
+ctest --test-dir build --output-on-failure
+./build/examples/xor_demo
+cmake -S . -B build-asan -DCMAKE_BUILD_TYPE=Debug -DENABLE_ASAN=ON
+cmake --build build-asan -j
+ctest --test-dir build-asan --output-on-failure
+```
+
+`ENABLE_ASAN=OFF` is the default. Turning it on adds
+`-fsanitize=address,undefined -fno-omit-frame-pointer` to both compilation and
+linking. For the original six-demo showcase (which **does** require `gnuplot`),
+see `src/readme.md`.
 
 ## Architecture
 
@@ -48,44 +75,6 @@ each leaf's `grad` buffer. An optimizer then updates the leaf `data` buffers.
   (`examples/xor_demo.cpp`) that exercises both optimizers.
 - **Optional plotting** — `src/plot.hpp` pipes commands to `gnuplot`.
 
-## Build, test, and run
-
-The following is the complete Definition of Done. Run it from the repository
-root; all commands are copy-pasteable and must exit 0.
-
-```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-cmake --build build -j
-ctest --test-dir build --output-on-failure
-./build/examples/xor_demo
-cmake -S . -B build-asan -DCMAKE_BUILD_TYPE=Debug -DENABLE_ASAN=ON
-cmake --build build-asan -j
-ctest --test-dir build-asan --output-on-failure
-```
-
-`ENABLE_ASAN=OFF` is the default. Turning it on adds
-`-fsanitize=address,undefined -fno-omit-frame-pointer` to both compilation and
-linking.
-
-For the original six-demo showcase (which **does** require `gnuplot`), see
-`src/readme.md`.
-
-## Deterministic XOR demo
-
-The 2-2-1 network `Sequential{Linear(2,2), Sigmoid, Linear(2,1), Sigmoid}` is
-trained on all four XOR rows with fixed initial weights, once with SGD and once
-with Adam. The program prints `epoch,loss` CSV for each mode and exits 0 only
-when both final losses clear their measured thresholds.
-
-![XOR demo training](docs/assets/xor-demo.gif)
-
-Typical results from this deterministic configuration (3000 epochs):
-
-| Mode | Initial loss | Final loss | Threshold |
-|------|-------------:|-----------:|----------:|
-| SGD  | 1.038177     | 0.002114   | 0.01      |
-| Adam | 1.038177     | 0.000128   | 0.01      |
-
 ## Usage
 
 ```cpp
@@ -111,6 +100,46 @@ int main() {
     }
 }
 ```
+
+## Results
+
+Measured outputs from the commands above — no estimates.
+
+| Check | Measured result | Gate |
+|---|---|---|
+| Gradient check (central difference) | worst relative error `1.889645e-04` | `1e-2` |
+| Serialization round-trip | bit-exact (`0.0` difference) | 4 corruption cases rejected |
+| XOR classification | 4 / 4 rows correct | seed 1, 3000 epochs |
+| CTest suite | 2 tests | Release and ASan/UBSan |
+
+The build needs only a C++17 compiler and CMake — zero new external
+dependencies. CI runs GCC, Clang, and ASan/UBSan jobs.
+
+### Deterministic XOR training
+
+The 2-2-1 network `Sequential{Linear(2,2), Sigmoid, Linear(2,1), Sigmoid}` is
+trained on all four XOR rows with fixed initial weights, once with SGD and once
+with Adam. The program prints `epoch,loss` CSV for each mode and exits 0 only
+when both final losses clear their measured thresholds.
+
+| Mode | Initial loss | Final loss | Threshold |
+|------|-------------:|-----------:|----------:|
+| SGD  | 1.038177     | 0.002114   | 0.01      |
+| Adam | 1.038177     | 0.000128   | 0.01      |
+
+## Original showcase gallery
+
+Plots from the original six-demo gnuplot showcase (`src/readme.md`). These are
+illustrations from that showcase, not outputs of the verifiability tests.
+
+| Estimator | Plot |
+|---|---|
+| MLP classifier | ![MLP classifier](images/mlp.png) |
+| Linear regression | ![Linear regression](images/linear-regression.png) |
+| Logistic regression | ![Logistic regression](images/logistic-regression.png) |
+| Polynomial regression | ![Polynomial regression](images/poly-regression.png) |
+| Ridge regression | ![Ridge regression](images/ridge-regression.png) |
+| Linear SVM | ![Linear SVM](images/svm.png) |
 
 ## Project structure
 
