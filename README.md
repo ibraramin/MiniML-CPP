@@ -15,8 +15,8 @@ one file.
 
 ## Proof in two minutes
 
-A real recording of the deterministic XOR training run featured below (900×520,
-roughly 18 seconds). It trains a 2-2-1 network with both SGD and Adam and prints
+A real recording of the deterministic XOR training run featured below (1920×1080,
+131 frames, roughly 18 seconds). It trains a 2-2-1 network with both SGD and Adam and prints
 `epoch,loss` CSV as it goes.
 
 ![XOR demo training — deterministic SGD and Adam on the XOR dataset](docs/assets/xor-demo.gif)
