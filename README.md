@@ -4,8 +4,6 @@
 
 > From-scratch C++17 machine learning you can read end to end — and verify, not just trust.
 
-> **Branch status.** The verifiability work lives on `feat/verifiability`, which is being pushed with a pull request open against `main`. The CI badge above tracks `main`, so it will reflect this work only after the PR is merged; until then it shows the default branch's state. The release badge will read `v0.1.0` once the release being published with this change goes live.
-
 A small machine-learning library written from scratch in C++17. The core is the
 C++ standard library only; `gnuplot` is used solely by the optional plotting
 header and is **not** needed to build, test, or run the demos in this README.
@@ -151,6 +149,12 @@ illustrations from that showcase, not outputs of the verifiability tests.
   added verification and optimizer headers.
 - `tests/`, `examples/` — deterministic gradcheck, serialization, XOR demo.
 - `CMakeLists.txt`, `.github/workflows/ci.yml` — build and CI.
+
+## Documentation
+
+- [Architecture](docs/ARCHITECTURE.md) — tensor layout, tape, optimizers, modules, gradcheck, serialization.
+- [Usage cookbook](docs/USAGE.md) — build, seed, train, verify, save/load, run the XOR demo.
+- [Contributing](CONTRIBUTING.md) — DoD commands, CI matrix, test and documentation expectations.
 
 ## Limitations
 
