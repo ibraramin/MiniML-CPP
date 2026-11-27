@@ -73,7 +73,13 @@ The working directory matters: `test_serialization` writes scratch `.bin`
 files in the current directory and removes them on normal exit (an early
 return can skip cleanup). Tests should print a clear `PASS ...` / `FAIL ...`
 line and return `0` on success, `1` on failure. A test that only passes on one
-machine is not a gate.
+machine is not a gate. The suite currently registers seven CTest cases:
+`gradcheck`, `gradcheck_falsification` (`WILL_FAIL TRUE`, so a passing negative
+control is a passing CTest), `serialization`, `minibatch_loader`,
+`metrics_binary`, `scheduler_lr` and `rmsprop_toy`. The last two are gated by
+`ENABLE_O3_EXTRAS`, which is ON by default so a downstream build can omit them.
+The tightened gradcheck threshold must not be changed without a new entry in
+`results/preregistration.md`.
 
 ## Keep dependencies at zero
 
@@ -89,13 +95,20 @@ The README's Limitations section is part of the contract. It currently states
 that autodiff is pointer-identity based, that `backward()` clears only the root
 gradient, that there is no scalar constructor or scalar `operator*`, that the
 loss is a sum rather than a mean, that broadcasting is limited to one row case,
-that training is full-batch only, that `randn()` is not reproducible, that
-serialization stores raw float weights only, that plotting uses `popen`, that
-there are no thread-safety guarantees, and that no install/export target is
-provided.
+that the code is CPU-only with no device model, that `randn()` is not
+reproducible, that serialization stores raw float weights only, that plotting
+uses `popen`, that there are no thread-safety guarantees, and that no
+install/export target is provided. The same section now also notes that
+deterministic mini-batching with seeded shuffling (`src/data.hpp`) and opt-in
+schedulers and RMSprop (`include/`) exist, while weight decay, gradient clipping
+and checkpoint/resume metadata remain unsupported.
 
 If a change alters any of these, update the bullet in the same pull request.
-Do not claim support for mini-batching, schedulers, weight decay, gradient
-clipping, GPU devices, checkpoint/resume metadata, or mean-reduced losses
-until the code actually provides them. Likewise, keep measured results in the
-README tied to recorded outputs rather than estimates.
+Do not claim support for weight decay, gradient clipping, GPU/CUDA devices,
+checkpoint/resume metadata, or mean-reduced losses until the code actually
+provides them. The mini-batch loader, schedulers and RMSprop are real but their
+headers describe exactly what they do — schedulers only compute a rate and
+RMSprop keeps its own accumulator state. Likewise, keep measured results in the
+README tied to recorded outputs rather than estimates; the gradcheck gate of
+`2.0e-3f` is pre-registered in `results/preregistration.md` along with its
+falsification controls.

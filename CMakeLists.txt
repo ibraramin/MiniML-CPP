@@ -6,6 +6,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 option(ENABLE_ASAN "Build with AddressSanitizer + UndefinedBehaviorSanitizer" OFF)
+# Step 6 features are opt-in headers under include/; this option gates their
+# test targets so a downstream build can omit them entirely.
+option(ENABLE_O3_EXTRAS "Build opt-in scheduler/RMSprop tests" ON)
 
 add_compile_options(-Wall -Wextra)
 
@@ -48,3 +51,41 @@ add_test(NAME gradcheck COMMAND test_gradcheck
          WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
 add_test(NAME serialization COMMAND test_serialization
          WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+
+# Step 3: deterministic mini-batch loader.
+add_executable(test_minibatch tests/test_minibatch.cpp)
+target_link_libraries(test_minibatch PRIVATE miniml_core)
+set_target_properties(test_minibatch PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests)
+add_test(NAME minibatch_loader COMMAND test_minibatch
+         WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+
+# Step 5: richer binary-classification metrics.
+add_executable(test_metrics tests/test_metrics.cpp)
+target_link_libraries(test_metrics PRIVATE miniml_core)
+set_target_properties(test_metrics PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests)
+add_test(NAME metrics_binary COMMAND test_metrics
+         WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+
+# Step 7: negative control for the tightened gradcheck gate.
+add_test(NAME gradcheck_falsification COMMAND test_gradcheck --falsify
+         WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+set_tests_properties(gradcheck_falsification PROPERTIES WILL_FAIL TRUE)
+
+# Step 6: opt-in schedulers and RMSprop.
+if(ENABLE_O3_EXTRAS)
+    add_executable(test_scheduler tests/test_scheduler.cpp)
+    target_link_libraries(test_scheduler PRIVATE miniml_core)
+    set_target_properties(test_scheduler PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests)
+    add_test(NAME scheduler_lr COMMAND test_scheduler
+             WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+
+    add_executable(test_rmsprop tests/test_rmsprop.cpp)
+    target_link_libraries(test_rmsprop PRIVATE miniml_core)
+    set_target_properties(test_rmsprop PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/tests)
+    add_test(NAME rmsprop_toy COMMAND test_rmsprop
+             WORKING_DIRECTORY ${CMAKE_BINARY_DIR})
+endif()

@@ -2,9 +2,9 @@
 
 This document describes the code as it exists in this repository. The tensor
 engine and tape live entirely in `src/tensor.cpp`; the remaining `src/*.hpp`
-headers (except the excluded showcase files) are consumed directly by the two
-tests and the XOR demo (`CMakeLists.txt` builds only `src/tensor.cpp` into
-`miniml_core`). For build and
+headers (except the excluded showcase files) are consumed directly by the test
+binaries and the XOR demo (`CMakeLists.txt` builds only `src/tensor.cpp` into
+`miniml_core`, and registers seven CTest cases). For build and
 usage recipes, see [USAGE.md](USAGE.md); for the project-level rules, see the
 root [README.md](../README.md).
 
@@ -17,7 +17,7 @@ flowchart LR
     F --> Y["Result Tensor: _op, _prev, _backward"]
     Y --> B["backward: DFS topological order, then reverse chain rule"]
     B --> G["Leaf grad buffers"]
-    G --> O["Optimizer: SGD or Adam zero_grad then step"]
+    G --> O["Optimizer: SGD, Adam, or opt-in RMSprop zero_grad then step"]
     O --> W
 ```
 
@@ -107,7 +107,7 @@ mean, so learning rates are batch-size dependent.
 
 ## Optimizers and parameter iteration
 
-Both optimizers take `std::vector<Tensor *>` from `Module::parameters()`, expose `zero_grad()` and `step()`, and require the parameter tensors to outlive them.
+The two core optimizers take `std::vector<Tensor *>` from `Module::parameters()`, expose `zero_grad()` and `step()`, and require the parameter tensors to outlive them.
 
 - `SGD` (`src/nn.hpp`): `(params, lr)`; `zero_grad()` zeros each parameter's `grad`;
   `step()` does `d[i] -= lr * g[i]` over `p->total_size`.
@@ -119,6 +119,29 @@ Both optimizers take `std::vector<Tensor *>` from `Module::parameters()`, expose
   `d -= lr * (m/bc1) / (sqrt(v/bc2) + eps)`. The division by `bc1`/`bc2` is the
   bias correction. `zero_grad()` has the same behavior as SGD's. Adam state
   (`t`, `m`, `v`) is not serialized.
+
+`RMSprop` (`include/rmsprop.hpp`) is an **opt-in** optimizer: nothing in `src/`
+includes that header, so including it explicitly is the feature gate and the
+existing `src/nn.hpp` semantics are unchanged. It follows the same
+`RMSprop(params, lr = 0.01f, decay = 0.9f, eps = 1e-8f)` / `zero_grad()` /
+`step()` convention. Its constructor rejects `decay` outside `[0, 1]` and
+negative `eps`. Per parameter it keeps a vector of squared-gradient
+accumulators; each step computes `v = decay * v + (1 - decay) * g * g` and then
+`d -= lr * g / (sqrt(v) + eps)`. `zero_grad()` only clears parameter
+gradients, **not** the accumulators. `squared_average(k)` exposes a read-only
+view of one accumulator for tests.
+
+## Learning-rate schedulers
+
+`include/schedulers.hpp` is likewise opt-in: schedulers only map a step index
+to a learning rate and never mutate tensors.
+
+- `ConstantLR(lr)` returns `lr` from `get_lr(step)` at every step; `base_lr()`
+  reports it.
+- `StepLR(lr, gamma, step_size)` returns
+  `lr * gamma^(floor(step / step_size))` from `get_lr(step)`. Its constructor
+  throws `std::invalid_argument` when `step_size == 0`; `base_lr()`, `gamma()`
+  and `step_size()` are accessors.
 
 ## Modules
 
@@ -140,7 +163,36 @@ Both optimizers take `std::vector<Tensor *>` from `Module::parameters()`, expose
 `PolynomialRegression`, `LogisticRegression`, `LinearSVM`, `MLPClassifier`) on
 the same modules and SGD loop. `src/metrics.hpp` provides
 `Metrics::accuracy(y_true, y_pred, thresh = 0.5f)`: predictions are thresholded
-at `thresh` and compared with `std::abs(p - y_true) < 1e-5`.
+at `thresh` and compared with `std::abs(p - y_true) < 1e-5`. It also adds binary
+classification helpers: `confusion(y_true, y_pred, thresh = 0.5f)` returns a
+`ConfusionMatrix` (`tp`, `fp`, `tn`, `fn`, plus `total()`), where the label is
+true when `y_true >= 0.5f` and the prediction is true when
+`y_pred >= thresh`. `confusion()` throws `std::invalid_argument` when the two
+tensors differ in size or are empty. `precision()` (`tp/(tp+fp)`), `recall()`
+(`tp/(tp+fn)`) and `f1()` (the harmonic mean of the two) all recompute the
+counts via `confusion()` and return `0.0f` for an undefined zero-denominator
+ratio instead of `NaN`.
+
+## Data loading
+
+`src/data.hpp` defines `Dataset` (a pair of `Tensor`s, `X` and `y`) and two
+helpers, neither of which touches autodiff — they only reorder and copy rows of
+tensor `data`:
+
+- `DataUtils::train_test_split(X, y, test_size = 0.2f, seed = 42)` shuffles a
+  `std::vector` of row indices with `std::mt19937(seed)` and returns
+  `{train, test}` `Dataset`s. The test count is `n_samples * test_size`.
+- `DataLoader(X, y, batch_size, seed = 42)` is a deterministic mini-batch
+  loader. It throws `std::invalid_argument` for `batch_size == 0`, `X` of rank
+  below 2, or a `y` sample count different from `X`'s. `batches_per_epoch()` is
+  `ceil(n / batch_size)` and the last batch may be smaller; `batch(index)`
+  copies those rows into fresh tensors and throws `std::out_of_range` for an
+  out-of-range index. `begin()`/`end()` iterate one epoch's batches, and
+  `epoch_batches()` materialises them all. `reshuffle(epoch_index)` rebuilds the
+  row order with our own Fisher-Yates loop driven by `mt19937(seed +
+  epoch_index)`, so the same seed and epoch index give the same permutation on
+  every run regardless of `std::shuffle`'s implementation; `next_epoch()`
+  increments `epoch_` and reshuffles with that index.
 
 ## Gradcheck
 
@@ -157,8 +209,13 @@ pointer-identity based. `relative_error(a, b)` is `|a-b| / max(1e-8, |a|+|b|)`.
 
 `tests/test_gradcheck.cpp` covers element-wise add, element-wise multiply,
 sigmoid, and a `Linear` layer's weight and bias through `MSELoss`, seeding all
-tensors by hand. Its threshold is `1e-2f`; the recorded worst relative error is
-`1.889645e-04` (`/var/tmp/opencode/dod/final-m-grad.out`, and the README table).
+tensors by hand. Its threshold was tightened from `1e-2f` to `2.0e-3f`, a value
+pre-registered in `results/preregistration.md` against the recorded worst
+relative error `1.889645e-04` (~10.6x margin). `CMakeLists.txt` also registers
+`gradcheck_falsification` (`WILL_FAIL TRUE`), which invokes `test_gradcheck`
+with `--falsify` and a deliberately injected multiplicative gradient defect;
+that run must exit 1 and print `FAIL gradcheck`. The unmodified binary reports
+the same worst relative error in Release and ASan/UBSan builds.
 
 ## Serialization format
 
@@ -199,23 +256,25 @@ destination), trailing garbage, and crafted huge dimensions.
 - **No scalar constructor / no scalar `operator*`** — create a shaped tensor and write `data->at(i)`.
 - **Sum, not mean loss** — `MSELoss` sums squared errors; learning rates depend on batch size.
 - **Limited broadcasting** — only the one row-broadcast case in `operator+`; other shapes throw.
-- **Full-batch only** — no mini-batching, shuffling, schedulers, weight decay, gradient clipping, checkpoint/resume metadata, or device model.
+- **CPU-only, single device** — no GPU/CUDA backend or device model; weight decay, gradient clipping and checkpoint/resume metadata are still absent. Deterministic mini-batching/seeded shuffling (`src/data.hpp`) and opt-in schedulers/RMSprop (`include/`) do exist.
 - **Other limits** — non-reproducible `randn`, raw-float-only serialization, `popen` plotting, no thread-safety guarantees, no install/export target.
 
 ## File-by-file map
 
 | Path | Role |
 |---|---|
-| `CMakeLists.txt` | C++17 static library `miniml_core` from `src/tensor.cpp`; two CTest tests and the XOR demo. `ENABLE_ASAN` adds ASan/UBSan flags. |
+| `CMakeLists.txt` | C++17 static library `miniml_core` from `src/tensor.cpp`; seven CTest cases and the XOR demo. `ENABLE_ASAN` adds ASan/UBSan flags; `ENABLE_O3_EXTRAS` (ON by default) gates the scheduler/RMSprop test targets. |
 | `README.md` | Overview, DoD commands, measured results, gallery, limitations. |
 | `src/readme.md` | Original six-demo gnuplot showcase notes. |
 | `src/tensor.hpp` / `src/tensor.cpp` | Tensor declaration; stride math, ops, tape, backward. Only `.cpp` is compiled. |
 | `src/nn.hpp` | `Module`, `Linear`, `Sigmoid`, `ReLU`, `Sequential`, `SGD`, `MSELoss`. |
-| `src/models.hpp` / `src/metrics.hpp` | Estimators and accuracy helper. |
+| `src/models.hpp` / `src/metrics.hpp` | Estimators; accuracy, confusion matrix, precision, recall and F1 helpers. |
+| `src/data.hpp` | `Dataset`, `train_test_split`, deterministic mini-batch `DataLoader`. |
 | `src/plot.hpp` / `src/main.cpp` | Optional gnuplot showcase; excluded from tests and the XOR demo. |
 | `include/adam.hpp` | Bias-corrected Adam optimizer. |
 | `include/gradcheck.hpp` / `include/serialization.hpp` | Gradient checks; version 1 `MMLW` weight format. |
-| `tests/test_gradcheck.cpp` / `tests/test_serialization.cpp` | Deterministic CTest binaries. |
+| `include/schedulers.hpp` / `include/rmsprop.hpp` | Opt-in `ConstantLR`/`StepLR` rate schedules and RMSprop optimizer. |
+| `tests/test_*.cpp` | Deterministic CTest binaries: gradcheck (plus falsification control), serialization, mini-batch loader, binary metrics, schedulers, RMSprop. |
 | `examples/xor_demo.cpp` | Deterministic 2-2-1 XOR training with both optimizers. |
 | `.github/workflows/ci.yml` | GCC/Clang and ASan/UBSan jobs. |
 | `docs/USAGE.md`, `CONTRIBUTING.md` | Cookbook and contribution rules. |
