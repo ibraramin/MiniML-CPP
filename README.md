@@ -7,7 +7,7 @@ A compact C++17 machine learning library written from scratch, for developers wh
 https://github.com/ibraramin/MiniML-CPP/releases/download/v0.2.0/brag.mp4
 [![Launch video](docs/assets/brag.jpg)](docs/assets/brag.mp4)
 
-https://github.com/ibraramin/MiniML-CPP/raw/main/docs/assets/brag.mp4
+https://github.com/user-attachments/assets/22ee3e92-d8fd-4523-a611-d49bb6d0823a
 
 
 ![Project showcase](https://github.com/ibraramin/MiniML-CPP/releases/download/v0.2.0/showcase.gif)
