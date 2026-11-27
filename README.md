@@ -4,12 +4,13 @@
 
 A compact C++17 machine learning library written from scratch, for developers who want to read the autodiff engine end to end and verify its gradients instead of calling a framework's `backward()` and trusting it.
 
-[![Launch video](https://github.com/ibraramin/MiniML-CPP/releases/download/v0.2.0/brag.jpg)](https://github.com/ibraramin/MiniML-CPP/releases/download/v0.2.0/brag.mp4)
+https://github.com/ibraramin/MiniML-CPP/releases/download/v0.2.0/brag.mp4
+[![Launch video](docs/assets/brag.jpg)](docs/assets/brag.mp4)
 
-[Watch the 20-second launch video](https://github.com/ibraramin/MiniML-CPP/releases/download/v0.2.0/brag.mp4)
+https://github.com/ibraramin/MiniML-CPP/raw/main/docs/assets/brag.mp4
+
 
 ![Project showcase](https://github.com/ibraramin/MiniML-CPP/releases/download/v0.2.0/showcase.gif)
-
 
 The core uses only the C++ standard library. A C++17 compiler and CMake are enough to build, test, and run everything below. `gnuplot` is needed only by the optional legacy plotting header.
 
@@ -42,12 +43,6 @@ ctest --test-dir build-asan --output-on-failure
 ```
 
 `ENABLE_ASAN` is `OFF` by default. Turning it on adds `-fsanitize=address,undefined -fno-omit-frame-pointer` to compilation and linking. The original six-demo gnuplot showcase is documented in [src/readme.md](src/readme.md).
-
-## Deterministic XOR demo
-
-![XOR demo training with deterministic SGD and Adam on the XOR dataset](docs/assets/xor-demo.gif)
-
-This is a real terminal recording of the training run above: 1920x1080, 131 frames, about 18 seconds. It trains the same seeded network with SGD and Adam and streams `epoch,loss` CSV for each mode.
 
 ## Usage
 
@@ -119,10 +114,10 @@ Recorded outputs from the commands above, not estimates. The gradient threshold 
 
 The 2-2-1 model is `Sequential{Linear(2,2), Sigmoid, Linear(2,1), Sigmoid}`, trained on all four XOR rows with fixed initial weights. The program evaluates with a fresh forward pass and exits 0 only when both final losses clear `0.01` and both accuracies reach 4 / 4.
 
-| Mode | Initial loss | Final loss | Threshold |
-|------|-------------:|-----------:|----------:|
-| SGD  | 1.038177     | 0.002114   | 0.01      |
-| Adam | 1.038177     | 0.000128   | 0.01      |
+| Mode | Final loss | Threshold |
+|------|-----------:|----------:|
+| SGD  | 0.002114   | 0.01      |
+| Adam | 0.000128   | 0.01      |
 
 CI runs GCC, Clang, and ASan/UBSan jobs. The mini-batch loader, metrics, schedulers, and RMSprop are covered by correctness tests; no throughput benchmark was registered for them.
 
