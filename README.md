@@ -4,7 +4,6 @@
 
 A compact C++17 machine learning library written from scratch, for developers who want to read the autodiff engine end to end and verify its gradients instead of calling a framework's `backward()` and trusting it.
 
-https://github.com/ibraramin/MiniML-CPP/releases/download/v0.2.0/brag.mp4
 [![Launch video](docs/assets/brag.jpg)](docs/assets/brag.mp4)
 
 https://github.com/user-attachments/assets/22ee3e92-d8fd-4523-a611-d49bb6d0823a
