@@ -15,8 +15,8 @@ one file.
 
 ## Proof in two minutes
 
-A real recording of the deterministic XOR training run featured below (900×520,
-roughly 18 seconds). It trains a 2-2-1 network with both SGD and Adam and prints
+A real recording of the deterministic XOR training run featured below (1920×1080,
+131 frames, roughly 18 seconds). It trains a 2-2-1 network with both SGD and Adam and prints
 `epoch,loss` CSV as it goes.
 
 ![XOR demo training — deterministic SGD and Adam on the XOR dataset](docs/assets/xor-demo.gif)
@@ -63,9 +63,15 @@ each leaf's `grad` buffer. An optimizer then updates the leaf `data` buffers.
 - **Neural modules** — `Linear`, `Sigmoid`, `ReLU`, `Sequential`, `Module`,
   following a familiar `forward`/`parameters`/`operator()` shape.
 - **Estimators** — linear, ridge, polynomial, logistic, linear SVM and an MLP
-  classifier in `src/models.hpp`; accuracy helper in `src/metrics.hpp`.
+  classifier in `src/models.hpp`; accuracy, confusion matrix, precision, recall
+  and F1 helpers in `src/metrics.hpp`.
 - **Optimizers** — batch SGD in `src/nn.hpp` and bias-corrected Adam in
-  `include/adam.hpp`.
+  `include/adam.hpp`, plus an opt-in RMSprop in `include/rmsprop.hpp`.
+- **Data preparation** — a deterministic mini-batch `DataLoader` with seeded
+  shuffling and a `train_test_split` helper in `src/data.hpp`.
+- **Learning-rate schedules** — opt-in `ConstantLR` and `StepLR` in
+  `include/schedulers.hpp`; schedulers only compute a rate and do not mutate
+  tensors.
 - **Verifiability** — deterministic central-difference gradient checks
   (`include/gradcheck.hpp`, `tests/test_gradcheck.cpp`), a versioned
   endian-safe binary weight format (`include/serialization.hpp`,
@@ -105,13 +111,15 @@ Measured outputs from the commands above — no estimates.
 
 | Check | Measured result | Gate |
 |---|---|---|
-| Gradient check (central difference) | worst relative error `1.889645e-04` | `1e-2` |
+| Gradient check (central difference) | worst relative error `1.889645e-04` | `2e-3` (pre-registered in `results/preregistration.md`) |
 | Serialization round-trip | bit-exact (`0.0` difference) | 4 corruption cases rejected |
 | XOR classification | 4 / 4 rows correct | seed 1, 3000 epochs |
-| CTest suite | 2 tests | Release and ASan/UBSan |
+| CTest suite | 7 tests | Release and ASan/UBSan |
 
 The build needs only a C++17 compiler and CMake — zero new external
-dependencies. CI runs GCC, Clang, and ASan/UBSan jobs.
+dependencies. CI runs GCC, Clang, and ASan/UBSan jobs. The mini-batch loader,
+metrics, schedulers and RMSprop are verified for correctness only; no
+performance benchmark was pre-registered for them.
 
 ### Deterministic XOR training
 
@@ -143,16 +151,22 @@ illustrations from that showcase, not outputs of the verifiability tests.
 
 - `src/tensor.hpp`, `src/tensor.cpp` — tensor storage, shapes, autodiff engine.
 - `src/nn.hpp` — modules, SGD, MSELoss.
-- `src/models.hpp`, `src/metrics.hpp` — estimators and accuracy.
+- `src/models.hpp`, `src/metrics.hpp` — estimators and binary-classification
+  metrics (accuracy, confusion matrix, precision, recall, F1).
+- `src/data.hpp` — `Dataset`, `train_test_split` and the deterministic
+  mini-batch `DataLoader`.
 - `src/plot.hpp`, `src/main.cpp`, `src/readme.md` — the original gnuplot showcase.
-- `include/gradcheck.hpp`, `include/adam.hpp`, `include/serialization.hpp` —
-  added verification and optimizer headers.
-- `tests/`, `examples/` — deterministic gradcheck, serialization, XOR demo.
+- `include/gradcheck.hpp`, `include/adam.hpp`, `include/serialization.hpp`,
+  `include/schedulers.hpp`, `include/rmsprop.hpp` — verification, optimizer and
+  opt-in scheduler headers.
+- `tests/`, `examples/` — seven CTest cases covering gradcheck (including a
+  falsification control), serialization, the mini-batch loader, binary metrics,
+  schedulers and RMSprop; plus the XOR demo.
 - `CMakeLists.txt`, `.github/workflows/ci.yml` — build and CI.
 
 ## Documentation
 
-- [Architecture](docs/ARCHITECTURE.md) — tensor layout, tape, optimizers, modules, gradcheck, serialization.
+- [Architecture](docs/ARCHITECTURE.md) — tensor layout, tape, optimizers, schedulers, modules, data loading, metrics, gradcheck, serialization.
 - [Usage cookbook](docs/USAGE.md) — build, seed, train, verify, save/load, run the XOR demo.
 - [Contributing](CONTRIBUTING.md) — DoD commands, CI matrix, test and documentation expectations.
 
@@ -173,8 +187,11 @@ This is an educational codebase, not a production framework. Be aware of:
   learning rates are batch-size dependent.
 - **Limited broadcasting.** Only one specific row-broadcast case in `operator+`
   is supported; other shape combinations throw.
-- **Full-batch only.** No mini-batching, shuffling, schedulers, weight decay,
-  gradients clipping, checkpoint/resume metadata, or GPU/CPU device model.
+- **CPU-only, single device.** There is no GPU/CUDA backend or device model.
+  Deterministic mini-batching and seeded shuffling are available through
+  `DataLoader` (`src/data.hpp`), and opt-in schedulers (`include/schedulers.hpp`)
+  and RMSprop (`include/rmsprop.hpp`) exist. Weight decay, gradient clipping,
+  and checkpoint/resume metadata are still not supported.
 - **`Tensor::randn()` uses `random_device`** and is therefore not reproducible;
   every deterministic test seeds its tensors by hand instead.
 - **Serialization stores raw float weights only** — no optimizer state, no

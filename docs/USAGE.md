@@ -28,8 +28,11 @@ ctest --test-dir build-asan --output-on-failure
 
 `ENABLE_ASAN` is `OFF` by default; enabling it adds
 `-fsanitize=address,undefined -fno-omit-frame-pointer` to compilation and
-linking. `CMakeLists.txt` registers two CTest tests named `gradcheck` and
-`serialization`; their binaries are written to `build/tests/`.
+linking. `CMakeLists.txt` registers seven CTest cases: `gradcheck`,
+`serialization`, `minibatch_loader`, `metrics_binary`, `gradcheck_falsification`,
+`scheduler_lr` and `rmsprop_toy`. The test executables are written to
+`build/tests/`; `scheduler_lr` and `rmsprop_toy` are gated by `ENABLE_O3_EXTRAS`,
+which is `ON` by default.
 
 ## Creating and seeding tensors
 
@@ -137,7 +140,7 @@ for (std::size_t i = 0; i < param.total_size; ++i)
 {
     float num = gc::numerical_gradient(param, i, gc::kH, loss_fn);
     float ana = gc::analytical_gradient(param, i, loss_fn);
-    float err = gc::relative_error(num, ana); // threshold in test: 1e-2f
+    float err = gc::relative_error(num, ana); // threshold in test: 2.0e-3f (pre-registered)
 }
 ```
 
@@ -147,7 +150,8 @@ calls `zero_grad()`, `backward()`, and reads `grad`. The test covers add,
 multiply, sigmoid, and a `Linear` layer's weight and bias through `MSELoss`.
 Run it with `ctest --test-dir build --output-on-failure` (the DoD command) or
 `./build/tests/test_gradcheck`. The recorded worst relative error is
-`1.889645e-04` against a `1e-2` gate.
+`1.889645e-04` against a pre-registered `2.0e-3` gate (see
+`results/preregistration.md`).
 
 ## Saving and loading weights
 
@@ -196,7 +200,7 @@ with SGD `lr=0.5` then Adam `lr=0.05`. Its stdout has:
 - a `# results` block with both final losses, thresholds, accuracies, and the four predictions of each model;
 - `PASS xor_demo` on success, `FAIL xor_demo` otherwise, with exit code 0 or 1.
 
-The recorded run (`/var/tmp/opencode/dod/final-m4.out`) ends with:
+The recorded run ends with:
 
 ```text
 sgd_final=0.002114 threshold=0.010000

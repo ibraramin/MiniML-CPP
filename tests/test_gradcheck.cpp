@@ -12,10 +12,17 @@
 #include <iostream>
 #include <string>
 
-// Measured worst-case relative error over all cases was 1.89e-4
-// (see /var/tmp/opencode/miniml-scratch.md). Threshold kept ~53x above it to
-// absorb compiler/CPU differences while still catching a broken gradient.
-static constexpr float kThreshold = 1e-2f;
+// Pre-registered in results/preregistration.md (oracle-reviewed): recorded
+// worst relative error 1.889645e-04, tightened threshold 2.0e-3 (~10.6x
+// margin). Do not change this value without a new preregistration entry.
+static constexpr float kThreshold = 2.0e-3f;
+
+// Falsification controls. A controlled multiplicative defect is injected into
+// the analytical gradient; for the elementwise-add case the true gradient is
+// exactly 1, so relative_error = delta/(2+delta) ~ delta/2.
+static constexpr float kTamperDeltaFailing = 8e-3f;  // rel ~4e-3 > gate
+static constexpr float kTamperDeltaPassing = 2e-3f;  // rel ~1e-3 < gate
+static constexpr float kUnboundedThreshold = 1e9f;   // negative control
 
 namespace gc = miniml_gradcheck;
 
@@ -29,18 +36,23 @@ static void seed(Tensor &t, float base)
 
 static bool check_param(const std::string &label,
                         Tensor &param,
-                        const std::function<Tensor()> &loss_fn)
+                        const std::function<Tensor()> &loss_fn,
+                        float threshold = kThreshold,
+                        float gradient_delta = 0.0f)
 {
     bool ok = true;
     float worst = 0.0f;
     for (std::size_t i = 0; i < param.total_size; ++i)
     {
         const float num = gc::numerical_gradient(param, i, gc::kH, loss_fn);
-        const float ana = gc::analytical_gradient(param, i, loss_fn);
+        // gradient_delta is zero in the honest gate; the falsification mode
+        // supplies a controlled multiplicative defect to prove the gate can
+        // fail. Both paths share this exact decision routine.
+        const float ana = gc::analytical_gradient(param, i, loss_fn) * (1.0f + gradient_delta);
         const float err = gc::relative_error(num, ana);
         if (err > worst)
             worst = err;
-        if (err > kThreshold || !std::isfinite(num) || !std::isfinite(ana))
+        if (err > threshold || !std::isfinite(num) || !std::isfinite(ana))
         {
             std::cerr << "FAIL " << label << " index " << i
                       << ": numerical=" << num << " analytical=" << ana
@@ -56,8 +68,49 @@ static bool check_param(const std::string &label,
     return ok;
 }
 
-int main()
+// Negative control: the same deterministic add case and the same check_param
+// decision path, but with a controlled defect injected into the analytical
+// gradient. `--falsify` must be rejected (exit 1); the two controls must
+// accept the same defect when it is below the gate or the gate is unbounded.
+static int run_falsification(bool expect_rejection, float delta, float threshold)
 {
+    Tensor a({4}), b({4});
+    seed(a, 0.37f);
+    seed(b, -0.21f);
+    auto loss = [&]() -> Tensor { return (a + b).sum(); };
+
+    std::cout << "FALSIFICATION delta=" << std::scientific << delta
+              << " threshold=" << threshold << "\n"
+              << std::fixed;
+    const bool gate_passed = check_param("falsification: injected defect", a, loss,
+                                         threshold, delta);
+    if (!gate_passed)
+        std::cerr << "FAIL gradcheck\n";
+    else
+        std::cout << "PASS gradcheck\n";
+
+    if (expect_rejection)
+    {
+        std::cout << "FALSIFICATION_DETECTED=" << (gate_passed ? 0 : 1) << "\n";
+        return gate_passed ? 0 : 1; // ctest WILL_FAIL expects exit 1 here
+    }
+    std::cout << "FALSIFICATION_ACCEPTED=" << (gate_passed ? 1 : 0) << "\n";
+    return gate_passed ? 0 : 1;
+}
+
+int main(int argc, char **argv)
+{
+    const std::string mode = (argc > 1) ? argv[1] : "";
+    if (mode == "--falsify" || mode == "--falsify-below" || mode == "--falsify-unbounded")
+    {
+        const bool expect_rejection = (mode == "--falsify");
+        const float delta = (mode == "--falsify-below") ? kTamperDeltaPassing
+                                                        : kTamperDeltaFailing;
+        const float threshold = (mode == "--falsify-unbounded") ? kUnboundedThreshold
+                                                                : kThreshold;
+        return run_falsification(expect_rejection, delta, threshold);
+    }
+
     bool ok = true;
     std::cout << "gradcheck h=" << gc::kH << " threshold=" << kThreshold << "\n";
 
